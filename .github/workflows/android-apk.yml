@@ -1,0 +1,49 @@
+
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Extract and build Android app
+        run: |
+          unzip -q NX-Digital-Twin-Pro-Phone-Build.zip -d source
+          cd source/NX-Digital-Twin-Pro
+          npm install
+          npm run build
+          npx cap add android
+          npx cap sync android
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: NX-Digital-Twin-Pro-debug-apk
+          path: source/NX-Digital-Twin-Pro/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          

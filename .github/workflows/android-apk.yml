@@ -46,4 +46,11 @@ jobs:
           name: NX-Digital-Twin-Pro-debug-apk
           path: source/NX-Digital-Twin-Pro/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
-          
+                - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Accept Android SDK licenses
+        run: yes | sdkmanager --licenses
+
+      - name: Extract and build Android app
+        run: |

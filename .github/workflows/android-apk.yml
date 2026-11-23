@@ -1,8 +1,7 @@
 
-       name: Buildname: Build Android APK
+name: Build Android APK
 
 on:
-  workflow_dispatch:
   workflow_dispatch:
   push:
     branches: [main]
@@ -36,10 +35,8 @@ jobs:
         run: |
           unzip -q NX-Digital-Twin-Pro-Phone-Build.zip -d source
           cd source/NX-Digital-Twin-Pro
-
           python3 - <<'PY'
           from pathlib import Path
-          import re
 
           p = Path("src/main.js")
           s = p.read_text()
@@ -78,25 +75,11 @@ jobs:
               updateCamera();
             }
           }, { passive: false });
-
           """
               s = s[:pos] + pinch + s[pos:]
               p.write_text(s)
 
-          css = Path("src/style.css")
-          if css.exists():
-              c = css.read_text()
-              if "touch-action" not in c:
-                  c, n = re.subn(
-                      r'(#viewport\s*\{)',
-                      r'\1\n  touch-action: none;',
-                      c,
-                      count=1
-                  )
-                  if n:
-                      css.write_text(c)
-
-          print("Pinch zoom patch applied")
+          print("Source patch completed")
           PY
 
       - name: Build Android app

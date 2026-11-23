@@ -1,13 +1,15 @@
-
-name: Build Android APK
+name: NX Digital Twin Pro Android APK
 
 on:
-  workflow_dispatch:
   push:
     branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
-  build-apk:
+  build:
     runs-on: ubuntu-latest
 
     steps:
@@ -26,77 +28,178 @@ jobs:
           java-version: 17
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v4
+        uses: android-actions/setup-android@v3
 
-      - name: Accept Android SDK licenses
-        run: yes | sdkmanager --licenses
+      - name: Accept Android licenses
+        run: yes | sdkmanager --licenses || true
 
-      - name: Extract and patch project
+      - name: Extract project
         run: |
-          unzip -q NX-Digital-Twin-Pro-Phone-Build.zip -d source
-          cd source/NX-Digital-Twin-Pro
+          mkdir -p source
+          unzip -o "NX-Digital-Twin-Pro-Phone-Build.zip" -d source
+          PROJECT_DIR="$(find source -name package.json -print -quit | xargs dirname)"
+          if [ -z "$PROJECT_DIR" ]; then
+            echo "Could not find package.json in the ZIP"
+            exit 1
+          fi
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+
+      - name: Apply camera preview update
+        run: |
+          cp "DOC-20261123-WA0006..txt" "$PROJECT_DIR/src/main.js"
+          cp "DOC-20261123-WA0007..html" "$PROJECT_DIR/index.html"
+
           python3 - <<'PY'
+          import os, re
           from pathlib import Path
 
-          p = Path("src/main.js")
-          s = p.read_text()
+          p = Path(os.environ["PROJECT_DIR"])
+          js = p / "src/main.js"
+          html = p / "index.html"
+          css = p / "src/style.css"
 
-          if "canvas.addEventListener('touchstart'" not in s:
-              anchor = "canvas.addEventListener('pointerdown'"
-              pos = s.find(anchor)
-              if pos < 0:
-                  raise SystemExit("Could not find pointerdown handler")
+          s = js.read_text()
+          s = s.replace(
+              "scene.background = new THREE.Color(0x050b14);",
+              "scene.background = null;"
+          )
+          s = s.replace(
+              "new THREE.WebGLRenderer({canvas, antialias:true, alpha:false})",
+              "new THREE.WebGLRenderer({canvas, antialias:true, alpha:true})"
+          )
 
-              pinch = """
-          let pinchStart = 0;
-          let pinchRadius = 0;
+          old = "$('arBtn').onclick=()=>{$('arOverlay').classList.toggle('hidden')};"
+          new = r'''
+          let arStream = null;
+          const arVideo = $('arCamera');
+          const arStatus = $('arStatus');
 
-          canvas.addEventListener('touchstart', e => {
-            if (e.touches.length === 2) {
-              e.preventDefault();
-              pinchStart = Math.max(1, Math.hypot(
-                e.touches[0].clientX - e.touches[1].clientX,
-                e.touches[0].clientY - e.touches[1].clientY
-              ));
-              pinchRadius = radius;
+          function setARBackground(hidden) {
+            try {
+              if (typeof floor !== 'undefined') floor.visible = !hidden;
+              if (typeof grid !== 'undefined') grid.visible = !hidden;
+            } catch (e) {}
+          }
+
+          async function startARCamera() {
+            try {
+              if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                throw new Error('Camera access is unavailable in this WebView.');
+              }
+              arStream = await navigator.mediaDevices.getUserMedia({
+                audio: false,
+                video: { facingMode: { ideal: 'environment' } }
+              });
+              arVideo.srcObject = arStream;
+              await arVideo.play();
+              $('arOverlay').classList.remove('hidden');
+              arStatus.textContent = 'CAMERA LIVE • 3D SCREEN OVERLAY';
+              $('arStart').classList.add('hidden');
+              $('arStop').classList.remove('hidden');
+              setARBackground(true);
+              log('Camera preview started. This is not world-anchored tracking.');
+            } catch (err) {
+              arStatus.textContent = 'Camera unavailable: ' + (err.message || 'Permission denied');
+              $('arOverlay').classList.remove('hidden');
+              $('arStart').classList.remove('hidden');
+              $('arStop').classList.add('hidden');
             }
-          }, { passive: false });
+          }
 
-          canvas.addEventListener('touchmove', e => {
-            if (e.touches.length === 2) {
-              e.preventDefault();
-              const distance = Math.max(1, Math.hypot(
-                e.touches[0].clientX - e.touches[1].clientX,
-                e.touches[0].clientY - e.touches[1].clientY
-              ));
-              radius = Math.max(4, Math.min(18,
-                pinchRadius * pinchStart / distance
-              ));
-              updateCamera();
-            }
-          }, { passive: false });
-          """
-              s = s[:pos] + pinch + s[pos:]
-              p.write_text(s)
+          function stopARCamera() {
+            if (arStream) arStream.getTracks().forEach(track => track.stop());
+            arStream = null;
+            arVideo.srcObject = null;
+            $('arOverlay').classList.add('hidden');
+            $('arStart').classList.remove('hidden');
+            $('arStop').classList.add('hidden');
+            setARBackground(false);
+          }
 
-          print("Source patch completed")
+          $('arBtn').onclick = () => {
+            if (arStream) stopARCamera();
+            else startARCamera();
+          };
+          $('arStart').onclick = startARCamera;
+          $('arStop').onclick = stopARCamera;
+          window.addEventListener('pagehide', () => {
+            if (arStream) arStream.getTracks().forEach(track => track.stop());
+          });
+          '''
+          if old not in s:
+              raise SystemExit("Could not find the existing AR button handler in src/main.js")
+          s = s.replace(old, new)
+          js.write_text(s)
+
+          h = html.read_text()
+          overlay = '''<div id="arOverlay" class="ar-overlay hidden">
+            <video id="arCamera" class="ar-camera" autoplay muted playsinline></video>
+            <div class="ar-controls">
+              <b id="arStatus">CAMERA PREVIEW</b>
+              <button id="arStart" type="button">Start camera</button>
+              <button id="arStop" type="button" class="hidden">Stop camera</button>
+              <small>Screen overlay preview • Not world-anchored tracking</small>
+            </div>
+          </div>'''
+          pattern = r'<div id="arOverlay"[^>]*>.*?</div>'
+          h, count = re.subn(pattern, overlay, h, count=1, flags=re.S)
+          if count != 1:
+              raise SystemExit("Could not find the AR overlay in index.html")
+          html.write_text(h)
+
+          extra = '''
+          /* Camera overlay preview */
+          .viewport { position: relative; }
+          #scene { position: relative; z-index: 2; background: transparent !important; }
+          .ar-overlay { position: absolute; inset: 0; z-index: 5; overflow: hidden; background: #050811; }
+          .ar-camera { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+          .ar-controls { position: absolute; z-index: 8; left: 12px; right: 12px; bottom: 42px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px; border-radius: 12px; background: rgba(3,10,20,.82); color: #e8f6ff; }
+          .ar-controls b, .ar-controls small { width: 100%; }
+          .ar-controls button { border: 1px solid #36bde0; border-radius: 8px; padding: 9px 13px; color: white; background: #12627b; }
+          .ar-overlay.hidden { display: none; }
+          '''
+          css.write_text(css.read_text() + "\n" + extra)
           PY
 
-      - name: Build Android app
+      - name: Install dependencies
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: npm install
+
+      - name: Build web app
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: npm run build
+
+      - name: Prepare Capacitor Android
+        working-directory: ${{ env.PROJECT_DIR }}
         run: |
-          cd source/NX-Digital-Twin-Pro
-          npm install
-          npm run build
-          npx cap add android
+          npm install @capacitor/android
+          if [ ! -d android ]; then
+            npx cap add android
+          fi
           npx cap sync android
-          cd android
+
+      - name: Add camera permission
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("android/app/src/main/AndroidManifest.xml")
+          s = p.read_text()
+          permission = '<uses-permission android:name="android.permission.CAMERA" />'
+          if permission not in s:
+              s = s.replace('<manifest', '<manifest\n    ' + permission, 1)
+          p.write_text(s)
+          PY
+
+      - name: Build Android APK
+        working-directory: ${{ env.PROJECT_DIR }}/android
+        run: |
           chmod +x gradlew
           ./gradlew assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: NX-Digital-Twin-Pro-debug-apk
-          path: source/NX-Digital-Twin-Pro/android/app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error
+          name: NX-Digital-Twin-Pro-camera-preview-apk
+          path: ${{ env.PROJECT_DIR }}/android/app/build/outputs/apk/debug/app-debug.apk
           

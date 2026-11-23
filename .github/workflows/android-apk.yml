@@ -31,9 +31,75 @@ jobs:
       - name: Accept Android SDK licenses
         run: yes | sdkmanager --licenses
 
-      - name: Extract and build Android app
+      - name: Extract and patch project
         run: |
           unzip -q NX-Digital-Twin-Pro-Phone-Build.zip -d source
+          cd source/NX-Digital-Twin-Pro
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          p = Path("src/main.js")
+          s = p.read_text()
+
+          if "canvas.addEventListener('touchstart'" not in s:
+              anchor = "canvas.addEventListener('pointerdown'"
+              pos = s.find(anchor)
+              if pos < 0:
+                  raise SystemExit("Could not find pointerdown handler")
+
+              pinch = """
+          let pinchStart = 0;
+          let pinchRadius = 0;
+
+          canvas.addEventListener('touchstart', e => {
+            if (e.touches.length === 2) {
+              e.preventDefault();
+              pinchStart = Math.max(1, Math.hypot(
+                e.touches[0].clientX - e.touches[1].clientX,
+                e.touches[0].clientY - e.touches[1].clientY
+              ));
+              pinchRadius = radius;
+            }
+          }, { passive: false });
+
+          canvas.addEventListener('touchmove', e => {
+            if (e.touches.length === 2) {
+              e.preventDefault();
+              const distance = Math.max(1, Math.hypot(
+                e.touches[0].clientX - e.touches[1].clientX,
+                e.touches[0].clientY - e.touches[1].clientY
+              ));
+              radius = Math.max(4, Math.min(18,
+                pinchRadius * pinchStart / distance
+              ));
+              updateCamera();
+            }
+          }, { passive: false });
+
+          """
+              s = s[:pos] + pinch + s[pos:]
+              p.write_text(s)
+
+          css = Path("src/style.css")
+          if css.exists():
+              c = css.read_text()
+              if "touch-action" not in c:
+                  c, n = re.subn(
+                      r'(#viewport\s*\{)',
+                      r'\1\n  touch-action: none;',
+                      c,
+                      count=1
+                  )
+                  if n:
+                      css.write_text(c)
+
+          print("Pinch zoom patch applied")
+          PY
+
+      - name: Build Android app
+        run: |
           cd source/NX-Digital-Twin-Pro
           npm install
           npm run build

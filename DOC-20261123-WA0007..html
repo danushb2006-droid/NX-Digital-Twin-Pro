@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <meta name="theme-color" content="#050811">
+  <title>NX-DIGITAL TWIN PRO v3.2</title>
+</head>
+<body>
+  <div id="app">
+    <header class="topbar">
+      <div class="brandmark">◇</div>
+      <div class="brand">
+        <div class="brandline"><strong>NX-DIGITAL TWIN PRO <span>v3.2</span></strong><small>CAD PBR • MECHANICAL XR</small></div>
+        <p>Helical Gear Reduction &amp; Impeller Drive <i class="live-dot"></i><span id="fps">LIVE</span></p>
+      </div>
+      <button class="icon-btn" id="resetView" aria-label="Reset view">↺</button>
+    </header>
+
+    <main class="workspace">
+      <section class="viewport">
+        <div class="viewport-tools">
+          <button id="sectionBtn">▥ Section</button>
+          <button id="wireBtn">▦ Wireframe</button>
+          <button id="arBtn" class="accent">⌖ AR View</button>
+        </div>
+        <canvas id="scene"></canvas>
+        <div class="hint">Drag to orbit • Pinch to zoom • Tap a component to inspect</div>
+        <div id="arOverlay" class="ar-overlay hidden">
+          <div class="scan-frame"><div class="scan-line"></div><b>SPATIAL PREVIEW</b><small>Camera-based AR is not enabled in this build</small></div>
+        </div>
+        <div id="partTag" class="part-tag hidden"></div>
+        <div class="mobile-part"><b id="mobilePartName">Helical Gear Assembly</b><span>3D DIGITAL TWIN</span></div>
+      </section>
+
+      <section class="control-area">
+        <nav class="tabs">
+          <button class="tab active" data-tab="assembly">Assembly</button>
+          <button class="tab" data-tab="telemetry">IoT Twin</button>
+          <button class="tab" data-tab="diagnostics">Diagnostics</button>
+          <button class="tab" data-tab="inspector">Inspector</button>
+        </nav>
+
+        <div class="panel active" id="assembly">
+          <article class="card">
+            <div class="card-head"><b>Exploded View Ratio</b><strong id="explodeValue">0%</strong></div>
+            <input id="explode" type="range" min="0" max="100" value="0">
+            <div class="range-labels"><span>Assembled</span><span>Exploded</span></div>
+          </article>
+          <article class="card">
+            <div class="card-head"><b>Guided Assembly Sequence</b><strong id="stepCount">STEP 1 / 7</strong></div>
+            <h3 id="stepTitle">1. Lower Housing Chassis</h3>
+            <p id="stepDescription">Cast iron base housing supports the shaft bearings and encloses the reduction gear train.</p>
+            <div class="button-row">
+              <button id="previousStep" class="secondary" disabled>Previous</button>
+              <button id="autoDemo" class="secondary">▶ Auto demo</button>
+              <button id="nextStep" class="primary">Next</button>
+            </div>
+          </article>
+          <article class="card">
+            <div class="card-head"><b>Material &amp; Stress Shaders</b></div>
+            <div class="button-row">
+              <button id="standardShader" class="secondary selected">Standard PBR</button>
+              <button id="stressShader" class="secondary">FEA Stress / Heat</button>
+            </div>
+            <p class="muted note">Stress colors are illustrative visualization only, not validated FEA results.</p>
+          </article>
+        </div>
+
+        <div class="panel" id="telemetry">
+          <article class="card">
+            <div class="card-head"><b>Motor Kinematics</b><button id="motorToggle" class="status-on">RUNNING</button></div>
+            <div class="metric-line"><span>Input motor speed</span><strong id="rpmText">1480 RPM</strong></div>
+            <input id="rpm" type="range" min="0" max="3000" value="1480">
+            <div class="metric-line small"><span>Output shaft speed</span><strong id="outputRpm">607 RPM</strong></div>
+            <div class="metric-line small"><span>Reduction ratio</span><strong>2.44 : 1</strong></div>
+          </article>
+          <article class="card">
+            <div class="card-head"><b>Vibration FFT Spectrum</b><span class="pill">SIMULATED • 100 Hz</span></div>
+            <canvas id="fftChart" height="180"></canvas>
+          </article>
+          <div class="metric-grid">
+            <article class="card metric"><span>Bearing temperature</span><strong id="temperature">44.8 °C</strong></article>
+            <article class="card metric"><span>Vibration RMS</span><strong id="vibration">1.45 mm/s</strong></article>
+          </div>
+          <p class="muted note">Telemetry values are simulated locally. No physical sensors or IoT device are connected.</p>
+        </div>
+
+        <div class="panel" id="diagnostics">
+          <article class="card">
+            <div class="card-head"><b>Inject Fault Conditions</b><span class="pill">SIMULATION</span></div>
+            <button class="fault-button" id="bearingFault"><span>◉ Bearing inner race fault</span><b id="bearingState">OFF</b></button>
+            <button class="fault-button" id="thermalFault"><span>♨ Thermal overload</span><b id="thermalState">OFF</b></button>
+          </article>
+          <article class="card">
+            <div class="card-head"><b>Diagnostic Event Log</b><button id="clearLog" class="text-button">Clear</button></div>
+            <div id="eventLog" class="event-log"><p>[SYSTEM] Digital twin initialized.</p><p>[SYSTEM] Simulated telemetry ready.</p></div>
+          </article>
+        </div>
+
+        <div class="panel" id="inspector">
+          <article class="card">
+            <div class="card-head"><b>CAD Component Inspector</b><span class="pill" id="partCode">GEAR-01</span></div>
+            <h2 id="inspectorTitle">Helical Drive Gear</h2>
+            <p id="inspectorDescription">Precision alloy-steel gear used to transmit torque through the reduction stage.</p>
+            <div class="spec-row"><span>Material</span><b id="partMaterial">42CrMo4 alloy steel</b></div>
+            <div class="spec-row"><span>Function</span><b id="partFunction">Torque transmission</b></div>
+            <div class="spec-row"><span>Model status</span><b>Conceptual 3D model</b></div>
+          </article>
+          <article class="card">
+            <b>Interaction Guide</b>
+            <p class="muted">Rotate the model by dragging. Use two fingers to zoom. Select a visible component to view its information. Use the assembly slider to separate components.</p>
+          </article>
+        </div>
+      </section>
+    </main>
+    <footer>NX DIGITAL TWIN PRO • OFFLINE APP SHELL • ENGINEERING DEMONSTRATION</footer>
+  </div>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

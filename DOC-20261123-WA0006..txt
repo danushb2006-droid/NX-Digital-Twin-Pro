@@ -1,0 +1,129 @@
+import * as THREE from 'three';
+import Chart from 'chart.js/auto';
+import './style.css';
+
+const $ = id => document.getElementById(id);
+const canvas = $('scene');
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x050b14);
+scene.fog = new THREE.Fog(0x050b14, 9, 22);
+const camera = new THREE.PerspectiveCamera(42, 1, .1, 100);
+camera.position.set(6.8, 5.2, 8.5);
+const renderer = new THREE.WebGLRenderer({canvas, antialias:true, alpha:false});
+renderer.setPixelRatio(Math.min(devicePixelRatio, 1.7));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+const hemi = new THREE.HemisphereLight(0x9ddfff, 0x17202c, 2.1); scene.add(hemi);
+const key = new THREE.DirectionalLight(0xffffff, 3.0); key.position.set(5,8,6); key.castShadow=true; scene.add(key);
+const rim = new THREE.PointLight(0x12bce8, 24, 18); rim.position.set(-5,2,-3); scene.add(rim);
+
+const root = new THREE.Group(); scene.add(root);
+const parts = [];
+const metal = new THREE.MeshStandardMaterial({color:0x697b8d,metalness:.82,roughness:.28});
+const darkMetal = new THREE.MeshStandardMaterial({color:0x263b50,metalness:.75,roughness:.36});
+const brass = new THREE.MeshStandardMaterial({color:0xc18a43,metalness:.82,roughness:.24});
+const blue = new THREE.MeshStandardMaterial({color:0x167b9b,metalness:.65,roughness:.3});
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(200,200),new THREE.MeshStandardMaterial({color:0x081321,roughness:.9}));
+floor.rotation.x=-Math.PI/2; floor.position.y=-1.5; floor.receiveShadow=true; scene.add(floor);
+const grid = new THREE.GridHelper(18,36,0x17415a,0x10273a); grid.position.y=-1.49; scene.add(grid);
+
+function addPart(name, code, description, materialName, fn, geometry, material, position, explodeVector, scale=[1,1,1]) {
+  const mesh=new THREE.Mesh(geometry,material); mesh.name=name; mesh.position.set(...position); mesh.scale.set(...scale);
+  mesh.castShadow=true; mesh.receiveShadow=true; root.add(mesh);
+  const base=mesh.position.clone(); const dir=new THREE.Vector3(...explodeVector);
+  parts.push({mesh,name,code,description,materialName,fn,base,dir,material});
+  return mesh;
+}
+function gear(radius, depth, teeth, material) {
+  const shape=new THREE.Shape();
+  const steps=teeth*4;
+  for(let i=0;i<steps;i++){
+    const a=i/steps*Math.PI*2, r=radius*(i%4===1||i%4===2?1.12:0.94);
+    const x=Math.cos(a)*r,y=Math.sin(a)*r;
+    if(i===0)shape.moveTo(x,y);else shape.lineTo(x,y);
+  }
+  shape.closePath();
+  const hole=new THREE.Path(); hole.absarc(0,0,radius*.25,0,Math.PI*2,true); shape.holes.push(hole);
+  const g=new THREE.ExtrudeGeometry(shape,{depth,bevelEnabled:true,bevelSegments:2,steps:1,bevelSize:.035,bevelThickness:.035,curveSegments:4});
+  g.center(); return g;
+}
+const housing=addPart('Lower housing chassis','CASE-01','Cast iron base housing supports shaft bearings and encloses the gear train.','FC250 cast iron','Structural support',new THREE.BoxGeometry(4.8,.55,2.8),darkMetal,[0,-.95,0],[0,-1.2,0],[1,1,1]);
+const upper=addPart('Upper housing cover','CASE-02','Removable cover protects the reduction gears and retains lubricant.','FC250 cast iron','Protection and lubrication',new THREE.BoxGeometry(4.8,.35,2.8),metal,[0,.85,0],[0,1.5,0]);
+const shaft1=addPart('Input shaft','SHAFT-01','Input shaft transfers motor torque to the primary helical gear.','EN8 steel','Input torque',new THREE.CylinderGeometry(.16,.16,3.9,32),brass,[-1.05,.05,0],[0,0,-1.2]);
+shaft1.rotation.z=Math.PI/2;
+const shaft2=addPart('Output shaft','SHAFT-02','Output shaft delivers reduced-speed torque to the driven impeller.','EN8 steel','Output torque',new THREE.CylinderGeometry(.19,.19,4.1,32),brass,[1.05,.05,0],[0,0,1.4]);
+shaft2.rotation.z=Math.PI/2;
+const gear1=addPart('Primary helical pinion','GEAR-01','24-tooth conceptual drive pinion made from alloy steel.','42CrMo4 alloy steel','Torque transmission',gear(.83,.34,24,blue),blue,[-.95,.1,0],[-1.2,0,0]);
+gear1.rotation.x=Math.PI/2;
+const gear2=addPart('Driven reduction gear','GEAR-02','Larger driven gear provides the conceptual 2.44:1 reduction stage.','42CrMo4 alloy steel','Speed reduction',gear(1.15,.38,34,brass),brass,[.95,.1,0],[1.2,0,0]);
+gear2.rotation.x=Math.PI/2;
+const bearing1=addPart('Input bearing','BRG-01','Bearing supports the input shaft and reduces friction.','Chrome steel','Shaft support',new THREE.TorusGeometry(.28,.09,12,32),metal,[-1.75,.1,0],[0,1.2,0]);
+bearing1.rotation.y=Math.PI/2;
+const bearing2=addPart('Output bearing','BRG-02','Bearing supports the output shaft under radial load.','Chrome steel','Shaft support',new THREE.TorusGeometry(.31,.09,12,32),metal,[1.75,.1,0],[0,-1.2,0]);
+bearing2.rotation.y=Math.PI/2;
+const impeller=addPart('Output impeller','IMP-01','Conceptual impeller connected to the output shaft.','Aluminium alloy','Fluid energy transfer',new THREE.CylinderGeometry(.75,.75,.18,12),blue,[2.6,.1,0],[2.0,.3,0]);
+impeller.rotation.z=Math.PI/2;
+for(let i=0;i<7;i++){const blade=new THREE.Mesh(new THREE.BoxGeometry(.12,.72,.12),brass);blade.position.set(2.6,.1,0);blade.rotation.x=i*Math.PI/3.5;root.add(blade);parts.push({mesh:blade,name:'Impeller blade',code:'IMP-BLD',description:'Radial impeller blade.',materialName:'Aluminium alloy',fn:'Fluid acceleration',base:blade.position.clone(),dir:new THREE.Vector3(2.1,.3,0),material:brass});}
+
+const raycaster=new THREE.Raycaster(), pointer=new THREE.Vector2();
+let selected=parts[4], wire=false, section=false, stress=false, running=true, rpm=1480, bearingFault=false, thermalFault=false, autoTimer=null;
+function selectPart(p){selected=p;$('mobilePartName').textContent=p.name;$('partTag').textContent=p.name;$('partTag').classList.remove('hidden');$('partCode').textContent=p.code;$('inspectorTitle').textContent=p.name;$('inspectorDescription').textContent=p.description;$('partMaterial').textContent=p.materialName;$('partFunction').textContent=p.fn;}
+selectPart(selected);
+
+let dragging=false, lastX=0,lastY=0,theta=0,phi=0.95,radius=10,target=new THREE.Vector3(0,0,0);
+function updateCamera(){phi=Math.max(.25,Math.min(2.7,phi));camera.position.set(target.x+radius*Math.sin(phi)*Math.sin(theta),target.y+radius*Math.cos(phi),target.z+radius*Math.sin(phi)*Math.cos(theta));camera.lookAt(target);}
+updateCamera();
+canvas.addEventListener('pointerdown',e=>{dragging=true;lastX=e.clientX;lastY=e.clientY;canvas.setPointerCapture(e.pointerId)});
+canvas.addEventListener('pointermove',e=>{if(!dragging)return;theta-=(e.clientX-lastX)*.008;phi-=(e.clientY-lastY)*.008;lastX=e.clientX;lastY=e.clientY;updateCamera()});
+canvas.addEventListener('pointerup',e=>{if(!dragging)return;const moved=Math.abs(e.clientX-lastX)+Math.abs(e.clientY-lastY);dragging=false;if(moved<8){const r=canvas.getBoundingClientRect();pointer.x=((e.clientX-r.left)/r.width)*2-1;pointer.y=-((e.clientY-r.top)/r.height)*2+1;raycaster.setFromCamera(pointer,camera);const hits=raycaster.intersectObjects(root.children,true);if(hits.length){const found=parts.find(p=>p.mesh===hits[0].object);if(found)selectPart(found);}}});
+canvas.addEventListener('wheel',e=>{radius=Math.max(4,Math.min(18,radius+e.deltaY*.008));updateCamera()},{passive:true});
+canvas.addEventListener('contextmenu',e=>e.preventDefault());
+function resize(){const r=canvas.getBoundingClientRect();if(!r.width||!r.height)return;renderer.setSize(r.width,r.height,false);camera.aspect=r.width/r.height;camera.updateProjectionMatrix()}
+new ResizeObserver(resize).observe(canvas);resize();
+
+$('explode').addEventListener('input',e=>{const v=+e.target.value/100;$('explodeValue').textContent=Math.round(v*100)+'%';parts.forEach(p=>p.mesh.position.copy(p.base).addScaledVector(p.dir,v*1.1))});
+$('wireBtn').onclick=()=>{wire=!wire;parts.forEach(p=>p.mesh.material.wireframe=wire);$('wireBtn').classList.toggle('accent',wire)};
+$('sectionBtn').onclick=()=>{section=!section;const plane=section?new THREE.Plane(new THREE.Vector3(0,0,-1),0):null;renderer.clippingPlanes=plane?[plane]:[];renderer.localClippingEnabled=section;$('sectionBtn').classList.toggle('accent',section)};
+$('arBtn').onclick=()=>{$('arOverlay').classList.toggle('hidden')};
+$('resetView').onclick=()=>{theta=0;phi=.95;radius=10;target.set(0,0,0);updateCamera()};
+$('standardShader').onclick=()=>{stress=false;parts.forEach(p=>p.mesh.material.color.set(p.material.color));$('standardShader').classList.add('selected');$('stressShader').classList.remove('selected')};
+$('stressShader').onclick=()=>{stress=true;parts.forEach((p,i)=>p.mesh.material.color.set(i%3===0?0xe84d42:i%3===1?0xe8b33e:0x2698cf));$('stressShader').classList.add('selected');$('standardShader').classList.remove('selected')};
+
+const steps=[
+['Lower Housing Chassis','Cast iron base housing supports the shaft bearings and encloses the reduction gear train.'],
+['Input and Output Shafts','Install the input and output shafts through their bearing locations.'],
+['Primary Helical Pinion','Fit the smaller pinion to the input shaft to transmit motor torque.'],
+['Driven Reduction Gear','Mesh the larger gear with the pinion to achieve speed reduction.'],
+['Bearing Assemblies','Install bearings to support both shafts and maintain alignment.'],
+['Output Impeller','Connect the impeller to the output shaft for the driven application.'],
+['Upper Housing Cover','Close the housing after checking clearances, alignment and lubrication.']
+];
+let step=0;
+function setStep(n){step=Math.max(0,Math.min(6,n));$('stepCount').textContent=`STEP ${step+1} / 7`;$('stepTitle').textContent=`${step+1}. ${steps[step][0]}`;$('stepDescription').textContent=steps[step][1];$('previousStep').disabled=step===0;$('nextStep').disabled=step===6}
+$('previousStep').onclick=()=>setStep(step-1);$('nextStep').onclick=()=>setStep(step+1);
+$('autoDemo').onclick=()=>{if(autoTimer){clearInterval(autoTimer);autoTimer=null;$('autoDemo').textContent='▶ Auto demo';return}$('autoDemo').textContent='Ⅱ Pause';autoTimer=setInterval(()=>{if(step===6){clearInterval(autoTimer);autoTimer=null;$('autoDemo').textContent='▶ Auto demo';return}setStep(step+1)},1800)};
+
+function log(message){const p=document.createElement('p');p.textContent=`[${new Date().toLocaleTimeString()}] ${message}`;$('eventLog').prepend(p);while($('eventLog').children.length>30)$('eventLog').lastChild.remove()}
+$('clearLog').onclick=()=>$('eventLog').replaceChildren();
+function updateFaults(){ $('bearingState').textContent=bearingFault?'ACTIVE':'OFF';$('thermalState').textContent=thermalFault?'ACTIVE':'OFF';$('bearingFault').classList.toggle('on',bearingFault);$('thermalFault').classList.toggle('on',thermalFault)}
+$('bearingFault').onclick=()=>{bearingFault=!bearingFault;updateFaults();log(`Bearing inner race fault ${bearingFault?'injected':'cleared'}.`)};
+$('thermalFault').onclick=()=>{thermalFault=!thermalFault;updateFaults();log(`Thermal overload ${thermalFault?'injected':'cleared'}.`)};
+$('rpm').oninput=e=>{rpm=+e.target.value;$('rpmText').textContent=rpm+' RPM';$('outputRpm').textContent=Math.round(rpm/2.44)+' RPM'};
+$('motorToggle').onclick=()=>{running=!running;$('motorToggle').textContent=running?'RUNNING':'STOPPED';$('motorToggle').classList.toggle('status-off',!running);log(`Motor ${running?'started':'stopped'}.`)};
+
+document.querySelectorAll('.tab').forEach(btn=>btn.onclick=()=>{document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active',b===btn));document.querySelectorAll('.panel').forEach(p=>p.classList.toggle('active',p.id===btn.dataset.tab))});
+let chart;
+function initChart(){const ctx=$('fftChart');chart=new Chart(ctx,{type:'line',data:{labels:Array.from({length:32},(_,i)=>i*3),datasets:[{label:'Amplitude',data:Array(32).fill(0),borderColor:'#43cbe9',backgroundColor:'#43cbe922',fill:true,tension:.25,pointRadius:0,borderWidth:2}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{color:'#71869e',maxTicksLimit:6,font:{size:8}},grid:{color:'#1b2b40'}},y:{ticks:{color:'#71869e',font:{size:8}},grid:{color:'#1b2b40'}}}}})}
+initChart();
+let last=0,frameCount=0;
+function animate(t){requestAnimationFrame(animate);const dt=Math.min((t-last)/1000,.05);last=t;frameCount++;
+ if(running){gear1.rotation.z+=dt*rpm/60*Math.PI*2/10;gear2.rotation.z-=dt*rpm/60*Math.PI*2/24;impeller.rotation.x+=dt*rpm/60*Math.PI*2/60}
+ const temp=44.8+(thermalFault?36:0)+(bearingFault?8:0)+Math.sin(t*.001)*.6;
+ const vib=1.45+(bearingFault?3.2:0)+(thermalFault?.7:0)+Math.abs(Math.sin(t*.002))*.12;
+ $('temperature').textContent=temp.toFixed(1)+' °C';$('vibration').textContent=vib.toFixed(2)+' mm/s';
+ if(frameCount%12===0){const vals=Array.from({length:32},(_,i)=>{const base=.15+Math.random()*.08;const peak=Math.exp(-Math.pow((i-(bearingFault?13:5))/1.5,2))*(bearingFault?2.8:1.2);return +(base+peak).toFixed(2)});chart.data.datasets[0].data=vals;chart.update('none')}
+ renderer.render(scene,camera);
+}
+requestAnimationFrame(animate);
+window.addEventListener('orientationchange',()=>setTimeout(resize,250));

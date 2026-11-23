@@ -1,4 +1,7 @@
-
+      - name: Find AR implementation
+        run: |
+          echo "Searching project for AR controls..."
+          grep -RniE "AR View|camera-based AR|AR preview|AR" source/NX-Digital-Twin-Pro/src source/NX-Digital-Twin-Pro/public --include="*.js" --include="*.html" --include="*.css" || true
 name: Build Android APK
 
 on:

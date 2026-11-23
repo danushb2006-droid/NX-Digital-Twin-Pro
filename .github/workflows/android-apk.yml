@@ -1,3 +1,4 @@
+
 name: NX Digital Twin Pro Android APK
 
 on:
@@ -27,9 +28,6 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
       - name: Accept Android licenses
         run: yes | sdkmanager --licenses || true
 
@@ -37,12 +35,12 @@ jobs:
         run: |
           mkdir -p source
           unzip -o "NX-Digital-Twin-Pro-Phone-Build.zip" -d source
-          PROJECT_DIR="$(find source -name package.json -print -quit | xargs dirname)"
-          if [ -z "$PROJECT_DIR" ]; then
-            echo "Could not find package.json in the ZIP"
+          PACKAGE_FILE="$(find source -name package.json -print -quit)"
+          if [ -z "$PACKAGE_FILE" ]; then
+            echo "Could not find package.json in ZIP"
             exit 1
           fi
-          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+          echo "PROJECT_DIR=$(dirname "$PACKAGE_FILE")" >> "$GITHUB_ENV"
 
       - name: Apply camera preview update
         run: |
@@ -59,16 +57,19 @@ jobs:
           css = p / "src/style.css"
 
           s = js.read_text()
+
           s = s.replace(
               "scene.background = new THREE.Color(0x050b14);",
               "scene.background = null;"
           )
+
           s = s.replace(
               "new THREE.WebGLRenderer({canvas, antialias:true, alpha:false})",
               "new THREE.WebGLRenderer({canvas, antialias:true, alpha:true})"
           )
 
           old = "$('arBtn').onclick=()=>{$('arOverlay').classList.toggle('hidden')};"
+
           new = r'''
           let arStream = null;
           const arVideo = $('arCamera');
@@ -84,20 +85,25 @@ jobs:
           async function startARCamera() {
             try {
               if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-                throw new Error('Camera access is unavailable in this WebView.');
+                throw new Error('Camera access unavailable in this WebView.');
               }
+
               arStream = await navigator.mediaDevices.getUserMedia({
                 audio: false,
                 video: { facingMode: { ideal: 'environment' } }
               });
+
               arVideo.srcObject = arStream;
               await arVideo.play();
+
               $('arOverlay').classList.remove('hidden');
               arStatus.textContent = 'CAMERA LIVE • 3D SCREEN OVERLAY';
               $('arStart').classList.add('hidden');
               $('arStop').classList.remove('hidden');
+
               setARBackground(true);
               log('Camera preview started. This is not world-anchored tracking.');
+
             } catch (err) {
               arStatus.textContent = 'Camera unavailable: ' + (err.message || 'Permission denied');
               $('arOverlay').classList.remove('hidden');
@@ -107,12 +113,17 @@ jobs:
           }
 
           function stopARCamera() {
-            if (arStream) arStream.getTracks().forEach(track => track.stop());
+            if (arStream) {
+              arStream.getTracks().forEach(track => track.stop());
+            }
+
             arStream = null;
             arVideo.srcObject = null;
+
             $('arOverlay').classList.add('hidden');
             $('arStart').classList.remove('hidden');
             $('arStop').classList.add('hidden');
+
             setARBackground(false);
           }
 
@@ -120,18 +131,23 @@ jobs:
             if (arStream) stopARCamera();
             else startARCamera();
           };
+
           $('arStart').onclick = startARCamera;
           $('arStop').onclick = stopARCamera;
+
           window.addEventListener('pagehide', () => {
             if (arStream) arStream.getTracks().forEach(track => track.stop());
           });
           '''
+
           if old not in s:
-              raise SystemExit("Could not find the existing AR button handler in src/main.js")
+              raise SystemExit("Could not find existing AR button handler")
+
           s = s.replace(old, new)
           js.write_text(s)
 
           h = html.read_text()
+
           overlay = '''<div id="arOverlay" class="ar-overlay hidden">
             <video id="arCamera" class="ar-camera" autoplay muted playsinline></video>
             <div class="ar-controls">
@@ -141,10 +157,18 @@ jobs:
               <small>Screen overlay preview • Not world-anchored tracking</small>
             </div>
           </div>'''
-          pattern = r'<div id="arOverlay"[^>]*>.*?</div>'
-          h, count = re.subn(pattern, overlay, h, count=1, flags=re.S)
+
+          h, count = re.subn(
+              r'<div id="arOverlay"[^>]*>.*?</div>\s*</div>',
+              overlay,
+              h,
+              count=1,
+              flags=re.S
+          )
+
           if count != 1:
-              raise SystemExit("Could not find the AR overlay in index.html")
+              raise SystemExit("Could not find existing AR overlay")
+
           html.write_text(h)
 
           extra = '''
@@ -158,6 +182,7 @@ jobs:
           .ar-controls button { border: 1px solid #36bde0; border-radius: 8px; padding: 9px 13px; color: white; background: #12627b; }
           .ar-overlay.hidden { display: none; }
           '''
+
           css.write_text(css.read_text() + "\n" + extra)
           PY
 
@@ -183,11 +208,19 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
+          import re
+
           p = Path("android/app/src/main/AndroidManifest.xml")
           s = p.read_text()
+
           permission = '<uses-permission android:name="android.permission.CAMERA" />'
+
           if permission not in s:
-              s = s.replace('<manifest', '<manifest\n    ' + permission, 1)
+              match = re.search(r'<manifest\b[^>]*>', s)
+              if not match:
+                  raise SystemExit("Android manifest opening tag not found")
+              s = s[:match.end()] + "\n    " + permission + s[match.end():]
+
           p.write_text(s)
           PY
 
